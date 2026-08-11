@@ -18,12 +18,12 @@ shuffle_train: True
 phase: 1
 exp_name: "DiLA_g_16_la_256"
 grad_accum_every: 1
-num_train_steps: 3_000
-# num_train_steps: 1000
+num_train_steps: 30_000
+# num_train_steps: 1_000
 max_grad_norm: 6.0
-save_model_every: 10_000
-save_milestone_every: 10_000
-val_every_n_steps: 10_000
+save_model_every: 1_000
+save_milestone_every: 1_000
+val_every_n_steps: 1_000
 num_val_batches_to_log: 4
 num_val_samples_to_save: 6
 milestone_optim_state: True
