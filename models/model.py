@@ -8,7 +8,7 @@ from models.modules.st_transformer import STTransformerBackbone
 from models.modules.fusion_decoder import CANNEncoder, CANNDecoder, FusionDecoder, StructureEncoderSpatialTemporal
 from models.modules.content_memory import ContentMemory
 
-from utils.losses import mse_loss, covariance_reg_loss, var_loss, action_loss, motion_consistency_loss, \
+from utils.losses import mse_loss, covariance_reg_loss, var_loss, action_loss, action_loss_ar, motion_consistency_loss, \
     time_variance_loss, symmetry_loss, l2_loss, kl_divergence_loss
 
 from einops import rearrange
@@ -603,9 +603,18 @@ class Inverse_World_model(nn.Module):
         loss_embedding_gen = mse_loss(res['x'][:, 1:], res['embedding_gen'])
         # loss_s_pred = mse_loss(res['x'][:, 1:], res['s_pred'])
 
-        # Compare predicted delta_structure with true delta_structure
-        loss_structure_inf_gen = action_loss(res['structure_inf'], res['latent_actions'], self.forward_dynamics)
-        # loss_structure_inf_gen = mse_loss(res['structure_inf'][:, 1:], res['structure_gen'])
+        # Phase 1 uses teacher-forced structures; phase 2 conditions the
+        # dynamics on the states from the autoregressive rollout.
+        if self.phase == 1:
+            loss_structure_inf_gen = action_loss(
+                res['structure_inf'], res['latent_actions'], self.forward_dynamics
+            )
+        elif self.phase == 2 or self.phase == 3:
+            loss_structure_inf_gen = action_loss_ar(
+                res['structure_inf'], res['latent_actions'],
+                res['structure_gen'], self.forward_dynamics
+            )
+
         # 4. Action Loss
         loss_action = motion_consistency_loss(res['structure_inf'], res['structure_gen'], self.Inverse_model)
         # loss_action = mse_loss(res['z'], res['gt_z'])

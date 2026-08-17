@@ -180,6 +180,17 @@ def action_loss(g_inf, latent_actions, forward_dynamics):
     delta_g_pred = forward_dynamics(g_inf[:, :-1], latent_actions)
     return F.mse_loss(delta_g_pred, delta_g_true)
 
+def action_loss_ar(g_inf, latent_actions, g_gen, forward_dynamics):
+    delta_g_true = g_inf[:, 1:] - g_inf[:, :-1]
+
+    # The first transition starts from the inferred ground-truth structure;
+    # every later transition starts from the preceding autoregressive output.
+    # Keep the time dimension on the first frame and concatenate tensors rather
+    # than passing a Python list to forward_dynamics.
+    g_rollout_prev = torch.cat([g_inf[:, :1], g_gen[:, :-1]], dim=1)
+    delta_g_pred = forward_dynamics(g_rollout_prev, latent_actions)
+    return F.mse_loss(delta_g_pred, delta_g_true)
+
 def adversarial_disentanglement_loss(g_inf, content, discriminator, 
                                     adv_weight=1.0, similarity_weight=1.0):
     """
