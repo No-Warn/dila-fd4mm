@@ -614,6 +614,7 @@ class Inverse_World_model(nn.Module):
                 res['structure_inf'], res['latent_actions'],
                 res['structure_gen'], self.forward_dynamics
             )
+            # loss_structure_inf_gen = mse_loss(res['structure_inf'][:, 1:], res['structure_gen'])
 
         # 4. Action Loss
         loss_action = motion_consistency_loss(res['structure_inf'], res['structure_gen'], self.Inverse_model)
