@@ -1,0 +1,56 @@
+# FD4MM-only data configuration for DiLA.
+#
+# Usage:
+#   accelerate launch main.py data=fd4mm seq_len=3 num_train_steps=... exp_name=DiLA-fd4mm
+#
+# The FD4MM train split is the synthetic dataset of Oh et al. (ECCV 2018).
+# Every index is an independent synthetic scene; only the within-sample
+# A -> C -> B frames are temporally ordered. Therefore:
+#
+#   * seq_len: 3  is the most faithful setting (the full genuine temporal axis)
+#   * for seq_len > 3 all emitted frames remain REAL observations, but the
+#     sequence is extended by reflection (frame_fill: reflect), which reverses
+#     motion direction at the folds
+#
+# See FD4MM_MIGRATION.md and utils/fd4mm_dataset.py for the measurements.
+
+use_multidataset: true
+
+# Single dataset params (unused when use_multidataset=true)
+root_dir: "./data/train"
+frames_per_clip: 3
+num_workers: 8
+
+multidataset:
+  dataset_names:
+    - fd4mm
+  ratios: [1]
+
+  batch_size: ${batch_size}
+  val_batch_size: ${val_batch_size}
+  seq_len: ${seq_len}
+  num_workers: ${num_workers}
+  pin_memory: ${pin_memory}
+  shuffle_train: ${shuffle_train}
+  seed: ${seed}
+
+  # FD4MM (Frequency Decoupling for Motion Magnification, CVPR 2024) frames.
+  # Layout: {data_dir}/{frameA,frameC,frameB}/%06d.png  (+ meta/, train_mf.txt)
+  fd4mm:
+    data_dir: ./data/train
+    # acb = genuine temporal order A -> C -> B (recommended)
+    # ab  = minimal A -> B pair
+    # concat_pairs = the migration document's plan 1; INVALID for this split
+    #                because it splices unrelated scenes (diagnostics only)
+    sequence_mode: acb
+    # reflect = extend with real frames (palindrome), interpolate = blend
+    # pixels (ghosts moving objects), repeat_last = static tail (discouraged)
+    frame_fill: reflect
+    use_frame_c: true
+    split_ratio: 0.9
+    seed: ${seed}
+    add_noise: false
+    noise_std: 0.03
+    pairs_per_sample: 4
+    stride: null
+    num_data: null

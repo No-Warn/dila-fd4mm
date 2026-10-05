@@ -50,6 +50,9 @@ RAE:
   reshape_to_2d: True
   noise_tau: 0.0  
   decoder_patch_size: 16
+  # Keep the ViT-XL RAE decoder on CPU between validations: it is only used for
+  # the reconstruction grid, and holding it on GPU costs ~1.55 GiB of VRAM.
+  park_decoder_on_cpu: true
 
 model:
   phase1_ckpt: "${work_dir}/phase1/DiLA_g_16_la_256_final.pt"

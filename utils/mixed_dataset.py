@@ -663,6 +663,64 @@ class MemoryMazeFactory(DatasetFactory):
         return batch
 
 
+class FD4MMFactory(DatasetFactory):
+    """
+    Factory for the FD4MM / Oh et al. (ECCV 2018) motion-magnification frames.
+
+    Expected data structure::
+
+        data_dir/
+          frameA/000000.png      # t = 0.0
+          frameC/000000.png      # t = 0.5  (intermediate, genuine)
+          frameB/000000.png      # t = 1.0
+          meta/000000.json       # optional (synthetic generator metadata)
+          train_mf.txt           # optional (magnification factors)
+
+    Each index is an *independent* synthetic scene, so sequences are built from
+    the genuine within-sample temporal axis A -> C -> B rather than by
+    concatenating A/B pairs across indices. See ``utils/fd4mm_dataset.py`` for
+    the empirical justification and the available ``sequence_mode`` options.
+
+    Returns a dict with an ``'images'`` key holding ``[seq_len, C, H, W]``.
+    """
+
+    def _build_dataset(self, config: DatasetConfig, seq_len: int,
+                       transform: Optional[Callable], mode: str) -> Dataset:
+        from utils.fd4mm_dataset import FD4MMDataset
+
+        params = config.additional_params or {}
+        return FD4MMDataset(
+            root=config.data_dir,
+            seq_len=seq_len,
+            sequence_mode=params.get('sequence_mode', 'acb'),
+            frame_fill=params.get('frame_fill', 'reflect'),
+            split=mode,
+            split_ratio=params.get('split_ratio', 0.9),
+            seed=params.get('seed', 42),
+            transform=transform,
+            use_frame_c=params.get('use_frame_c', True),
+            pairs_per_sample=params.get('pairs_per_sample', 4),
+            stride=params.get('stride', None),
+            add_noise=params.get('add_noise', False),
+            noise_std=params.get('noise_std', 0.03),
+            num_data=params.get('num_data', None),
+        )
+
+    def create_train_dataset(self, config: DatasetConfig, seq_len: int,
+                             transform: Optional[Callable]) -> Dataset:
+        return self._build_dataset(config, seq_len, transform, 'train')
+
+    def create_val_dataset(self, config: DatasetConfig, seq_len: int,
+                           transform: Optional[Callable]) -> Dataset:
+        return self._build_dataset(config, seq_len, transform, 'val')
+
+    def normalize_batch(self, batch: Any) -> torch.Tensor:
+        """FD4MMDataset returns a dict with an 'images' key: [seq_len, C, H, W]."""
+        if isinstance(batch, dict):
+            return batch['images']
+        return batch
+
+
 class DatasetRegistry:
     """
     Registry for dataset factories.
@@ -700,6 +758,8 @@ class DatasetRegistry:
             return MemoryMazeFactory()
         elif factory_class == DMCVisionFactory:
             return DMCVisionFactory()
+        elif factory_class == FD4MMFactory:
+            return FD4MMFactory()
         return cls._factories[name]
     
     @classmethod
@@ -734,6 +794,9 @@ class DatasetRegistry:
 
         # Register DMC Vision Benchmark
         cls.register("dmc_vision", DMCVisionFactory())
+
+        # Register FD4MM (motion magnification frames)
+        cls.register("fd4mm", FD4MMFactory())
 
         cls._initialized = True
 

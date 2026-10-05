@@ -116,12 +116,15 @@ class Trainer:
         self._init_model(self.phase)
 
     def _init_tracker(self):
+        # NOTE: newer wandb releases removed the `settings.start_method` field and
+        # validate Settings strictly (pydantic extra_forbidden), which made this
+        # call raise even when wandb was disabled. WANDB_START_METHOD is already
+        # set as an env var above, so the deprecated key is simply dropped.
         self.accelerator.init_trackers(
             project_name=self.cfg.wandb.project,
             init_kwargs={
                 "wandb": {
                     "reinit": False,
-                    "settings": {"start_method": "thread"},
                     "name": self.wandb_name,
                     "mode": "online" if self.wandb_enabled else "disabled",
                     "save_code": True,
@@ -131,7 +134,12 @@ class Trainer:
         )
         if self.accelerator.is_main_process:
             self.wandb_run = self.accelerator.get_tracker("wandb", unwrap=True)
-            logger.info("wandb run url: %s", self.wandb_run.get_url())
+            # With mode="disabled" (or older/newer wandb combinations) the tracker
+            # may be a NoopRun, which has no get_url().
+            if hasattr(self.wandb_run, "get_url"):
+                logger.info("wandb run url: %s", self.wandb_run.get_url())
+            else:
+                logger.info("wandb disabled; no run URL.")
 
     def _set_seed_everywhere(self, seed):
         torch.manual_seed(seed)
@@ -158,6 +166,20 @@ class Trainer:
         self.rae.to(self.device)
         for p in self.rae.parameters(): p.requires_grad_(False)
         self.rae = self.accelerator.prepare(self.rae)
+
+        # The RAE decoder is a ViT-XL (~415M params / 1.55 GiB fp32) that is only
+        # needed once per validation for the reconstruction grid. Parking it on
+        # CPU frees that memory for the trainable model on every training step;
+        # it is moved back on demand in `_decode_latents`. Set
+        # RAE.park_decoder_on_cpu=false to restore the old behaviour.
+        self._decoder_parked_on_cpu = False
+        if bool(self.cfg.RAE.get('park_decoder_on_cpu', True)):
+            self._decoder_parked_on_cpu = True
+            self.accelerator.unwrap_model(self.rae).decoder.to('cpu')
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            logger.info('RAE decoder parked on CPU to save VRAM.')
+
         logger.info(f'RAE initialized.')
 
         # Phase 1 Training
@@ -442,6 +464,9 @@ class Trainer:
         if hasattr(md_cfg, 'memorymaze') and md_cfg.memorymaze is not None:
             config["data"]["memorymaze"] = OmegaConf.to_container(md_cfg.memorymaze, resolve=True)
 
+        if hasattr(md_cfg, 'fd4mm') and md_cfg.fd4mm is not None:
+            config["data"]["fd4mm"] = OmegaConf.to_container(md_cfg.fd4mm, resolve=True)
+
         # Filter datasets based on data availability
         orig_names = list(config["data"]["dataset_names"])
         orig_ratios = list(config["data"]["ratios"])
@@ -505,6 +530,14 @@ class Trainer:
                     logger.warning(f"[skip] Memory Maze data_dir not found: {config['data']['memorymaze']['data_dir']}")
                     should_include = False
             
+            elif name == "fd4mm":
+                if "fd4mm" not in config["data"]:
+                    logger.warning(f"[skip] FD4MM config not found in multidataset config")
+                    should_include = False
+                elif not Path(config["data"]["fd4mm"]["data_dir"]).exists():
+                    logger.warning(f"[skip] FD4MM data_dir not found: {config['data']['fd4mm']['data_dir']}")
+                    should_include = False
+
             if should_include:
                 filtered_names.append(name)
                 filtered_ratios.append(ratio)
@@ -790,6 +823,24 @@ class Trainer:
 
         return total_loss_value_accum, log_payload
 
+    def _decode_latents(self, z: torch.Tensor) -> torch.Tensor:
+        """Decode RAE latents for visualisation, respecting CPU parking.
+
+        The ViT-XL decoder is ~415M params (1.55 GiB fp32) and is only needed
+        once per validation, so it may be parked on CPU between calls.
+        """
+        rae = self.accelerator.unwrap_model(self.rae)
+        parked = getattr(self, "_decoder_parked_on_cpu", False)
+        if parked:
+            rae.decoder.to(z.device)
+        try:
+            return rae.decode(z)
+        finally:
+            if parked:
+                rae.decoder.to("cpu")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
     @torch.no_grad()
     def run_validation_and_log(self, train_step: int):
         if self.val_dl_iter is None:
@@ -837,7 +888,7 @@ class Trainer:
                 # res_dict = model_for_eval.prediction(X_enc[:, :2], z)
                 
                 embedding_gen_flat = res_dict['embedding_gen'].flatten(0, 1)
-                recon_videos = self.rae.decode(embedding_gen_flat)
+                recon_videos = self._decode_latents(embedding_gen_flat)
                 recon_videos = rearrange(recon_videos, '(b t) c h w -> b t c h w', b=batch_size, t=seq_len-1)
                 # recon_videos = rearrange(recon_videos, '(b t) c h w -> b t c h w', b=batch_size, t=seq_len)
 

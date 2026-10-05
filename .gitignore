@@ -6,7 +6,9 @@ __pycache__/
 CLAUDE.md
 LICENSE
 dataset/
+/data/
 docs/
+fd4mm_sequence_check.png
 examples/
 submitted_codes/
 .DS_Store
@@ -47,6 +49,8 @@ VAR/
 checkpoints/
 pretrained/huggingface/
 pretrained/.cache/
+# Local RAE/DINOv2 weights cache (~1.9 GB, re-downloadable; see FD4MM_MIGRATION.md)
+/pretrained/
 *.incomplete
 # PyInstaller
 #  Usually these files are written by a python script from a template

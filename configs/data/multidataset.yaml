@@ -14,13 +14,14 @@ num_workers: 8
 
 # Multi-dataset configuration
 multidataset:
-  # List of datasets to use (supported: procgen games, ssv2, openx, nwm, loopnav)
+  # List of datasets to use (supported: procgen games, ssv2, openx, nwm, loopnav, fd4mm)
   dataset_names:
     # - procgen
     - ssv2
     - openx
     - nwm
     - loopnav
+    # - fd4mm
     # - memorymaze
 
   # Sampling ratios for each dataset (order must match dataset_names)
@@ -142,6 +143,32 @@ multidataset:
     seed: ${seed}
     return_goal: false
     cache_metadata: false
+
+  # FD4MM (Frequency Decoupling for Motion Magnification, CVPR 2024) frames.
+  # Data layout: {data_dir}/{frameA,frameC,frameB}/%06d.png (+ optional meta/).
+  #
+  # NOTE: this FD4MM train split is the synthetic dataset of Oh et al.
+  # (ECCV 2018). Each index is an INDEPENDENT synthetic scene (own COCO
+  # background + own random motion) and only the within-sample A -> C -> B
+  # frames are temporally ordered. Consecutive indices are NOT continuous, so
+  # `sequence_mode: acb` uses the genuine 3-frame temporal axis instead of
+  # concatenating A/B pairs across indices.
+  #   sequence_mode: acb | ab | concat_pairs   (concat_pairs is INVALID here)
+  #   frame_fill:    reflect | interpolate | repeat_last
+  #                  (only used when seq_len exceeds the genuine 3 frames)
+  # For the most faithful training set `seq_len: 3` and `frame_fill` is unused.
+  fd4mm:
+    data_dir: ./data/train
+    sequence_mode: acb
+    frame_fill: reflect
+    use_frame_c: true
+    split_ratio: 0.9
+    seed: ${seed}
+    add_noise: false
+    noise_std: 0.03
+    pairs_per_sample: 4      # concat_pairs only: T = 2 * pairs_per_sample
+    stride: null             # concat_pairs only: defaults to pairs_per_sample
+    num_data: null
 
   # Memory Maze configuration
   memorymaze:

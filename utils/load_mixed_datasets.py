@@ -217,6 +217,30 @@ def create_dataset_configs_from_config(config: Dict[str, Any]) -> list:
                 )
             )
 
+        elif dataset_name == "fd4mm":
+            # FD4MM / Oh et al. (ECCV 2018) motion-magnification frame folders.
+            # Genuine within-sample temporal axis is A -> C -> B; consecutive
+            # indices are independent synthetic scenes (see utils/fd4mm_dataset.py).
+            fd4mm_config = config['data']['fd4mm']
+            configs.append(
+                DatasetConfig(
+                    name="fd4mm",
+                    data_dir=fd4mm_config['data_dir'],
+                    additional_params={
+                        'sequence_mode': fd4mm_config.get('sequence_mode', 'acb'),
+                        'frame_fill': fd4mm_config.get('frame_fill', 'reflect'),
+                        'split_ratio': fd4mm_config.get('split_ratio', 0.9),
+                        'seed': fd4mm_config.get('seed', config['data'].get('seed', 42)),
+                        'use_frame_c': fd4mm_config.get('use_frame_c', True),
+                        'pairs_per_sample': fd4mm_config.get('pairs_per_sample', 4),
+                        'stride': fd4mm_config.get('stride', None),
+                        'add_noise': fd4mm_config.get('add_noise', False),
+                        'noise_std': fd4mm_config.get('noise_std', 0.03),
+                        'num_data': fd4mm_config.get('num_data', None),
+                    }
+                )
+            )
+
         else:
             raise ValueError(f"Unsupported dataset name '{dataset_name}'. Known options: {dataset_names}")
     
